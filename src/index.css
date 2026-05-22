@@ -1,0 +1,99 @@
+@config "../tailwind.config.js";
+@import "tailwindcss";
+
+:root {
+  color: #f4f4ef;
+  background: #080908;
+  font-family: Aptos, "Avenir Next", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+input {
+  min-width: 0;
+}
+
+.console-grid {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.065) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    radial-gradient(circle at 82% 14%, rgba(102, 215, 198, 0.17), transparent 28%),
+    radial-gradient(circle at 10% 100%, rgba(245, 191, 105, 0.14), transparent 30%);
+  background-size: 48px 48px, 48px 48px, auto, auto;
+  mask-image: linear-gradient(to bottom, black, rgba(0, 0, 0, 0.62), transparent);
+}
+
+.echo-range {
+  appearance: none;
+  background: transparent;
+  min-height: 2.75rem;
+  touch-action: pan-y;
+}
+
+.echo-range::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #66d7c6, #f5bf69);
+  border-radius: 999px;
+  height: 0.72rem;
+}
+
+.echo-range::-moz-range-track {
+  background: linear-gradient(90deg, #66d7c6, #f5bf69);
+  border-radius: 999px;
+  height: 0.72rem;
+}
+
+.echo-range::-webkit-slider-thumb {
+  appearance: none;
+  background: #fff6dd;
+  border: 3px solid #111412;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  height: 2rem;
+  margin-top: -0.65rem;
+  width: 2rem;
+}
+
+.echo-range::-moz-range-thumb {
+  background: #fff6dd;
+  border: 3px solid #111412;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  height: 2rem;
+  width: 2rem;
+}
+
+.echo-range:focus-visible {
+  outline: 4px solid rgba(102, 215, 198, 0.38);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+.meter-fill {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.28) 0 0.22rem,
+      transparent 0.22rem 0.48rem
+    ),
+    linear-gradient(90deg, #66d7c6, #f5bf69, #ff776e);
+  box-shadow: 0 0 1.5rem rgba(102, 215, 198, 0.28);
+  min-width: 0.75rem;
+  transition: width 90ms ease-out;
+}
