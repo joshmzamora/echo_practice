@@ -39,28 +39,54 @@ function readMicError(error: unknown) {
   return 'The microphone could not start. Check your device audio settings and try again.'
 }
 
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
 function SliderControl({
   label,
   max,
   min = 0,
   onChange,
   step,
+  unit,
   value,
-  valueLabel,
 }: {
   label: string
   max: number
   min?: number
   onChange: (value: number) => void
   step: number
+  unit: string
   value: number
-  valueLabel: string
 }) {
   return (
-    <label className="block min-w-0 overflow-hidden rounded-[1.5rem] border border-white/8 bg-white/[0.045] p-4 sm:p-5">
-      <span className="mb-4 flex items-baseline justify-between gap-4">
-        <span className="text-base font-semibold text-zinc-100">{label}</span>
-        <span className="text-sm font-bold text-[#f5bf69]">{valueLabel}</span>
+    <label className="block min-w-0 rounded-lg border border-white/8 bg-white/[0.028] px-3 py-2">
+      <span className="mb-1.5 flex items-center justify-between gap-3">
+        <span className="font-mono text-[0.72rem] font-bold uppercase text-zinc-400">
+          {label}
+        </span>
+        <span className="flex h-8 items-center overflow-hidden rounded-md border border-white/10 bg-black/35 text-sm text-zinc-200 focus-within:border-[#66d7c6]/55">
+          <input
+            aria-label={`${label} value`}
+            className="h-full w-[4.4rem] border-0 bg-transparent px-2 text-right font-mono font-semibold text-white outline-none"
+            max={max}
+            min={min}
+            onChange={(event) => {
+              const nextValue = event.currentTarget.valueAsNumber
+
+              if (!Number.isNaN(nextValue)) {
+                onChange(clampValue(nextValue, min, max))
+              }
+            }}
+            step={step}
+            type="number"
+            value={value}
+          />
+          <span className="border-l border-white/8 px-2 font-mono text-xs uppercase text-zinc-500">
+            {unit}
+          </span>
+        </span>
       </span>
       <input
         className="echo-range w-full"
@@ -90,9 +116,62 @@ export default function App() {
   const echoGainRef = useRef<GainNode | null>(null)
   const meterFrameRef = useRef<number | null>(null)
   const micSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const scopeCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const startAttemptRef = useRef(0)
   const startingRef = useRef(false)
+
+  const drawScopeFrame = useCallback((samples?: Uint8Array) => {
+    const canvas = scopeCanvasRef.current
+    const context = canvas?.getContext('2d')
+
+    if (!canvas || !context) {
+      return
+    }
+
+    const ratio = Math.min(window.devicePixelRatio || 1, 2)
+    const width = Math.max(canvas.clientWidth, 1)
+    const height = Math.max(canvas.clientHeight, 1)
+    const pixelWidth = Math.round(width * ratio)
+    const pixelHeight = Math.round(height * ratio)
+
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth
+      canvas.height = pixelHeight
+    }
+
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.clearRect(0, 0, width, height)
+    context.lineCap = 'round'
+    context.lineJoin = 'round'
+
+    context.beginPath()
+    context.moveTo(0, height / 2)
+    context.lineTo(width, height / 2)
+    context.lineWidth = 1
+    context.strokeStyle = 'rgba(148, 163, 184, 0.18)'
+    context.stroke()
+
+    if (!samples) {
+      return
+    }
+
+    context.beginPath()
+    for (let index = 0; index < samples.length; index += 1) {
+      const x = (index / (samples.length - 1)) * width
+      const y = (samples[index] / 255) * height
+
+      if (index === 0) {
+        context.moveTo(x, y)
+      } else {
+        context.lineTo(x, y)
+      }
+    }
+
+    context.lineWidth = 1.7
+    context.strokeStyle = '#8ad8cb'
+    context.stroke()
+  }, [])
 
   const stopLevelMeter = useCallback(() => {
     if (meterFrameRef.current !== null) {
@@ -101,7 +180,8 @@ export default function App() {
     }
 
     setMicLevel(0)
-  }, [])
+    drawScopeFrame()
+  }, [drawScopeFrame])
 
   const releaseAudioGraph = useCallback(() => {
     stopLevelMeter()
@@ -141,11 +221,12 @@ export default function App() {
 
       const rms = Math.sqrt(squaredSignal / samples.length)
       setMicLevel(Math.min(100, Math.round(rms * 320)))
+      drawScopeFrame(samples)
       meterFrameRef.current = requestAnimationFrame(drawMeter)
     }
 
     drawMeter()
-  }, [])
+  }, [drawScopeFrame])
 
   const startMic = useCallback(async () => {
     if (startingRef.current || streamRef.current) {
@@ -312,26 +393,67 @@ export default function App() {
     [releaseAudioGraph],
   )
 
-  return (
-    <main className="min-h-svh overflow-hidden bg-[#080908] px-4 py-5 text-zinc-100 sm:px-6 sm:py-8">
-      <section className="mx-auto flex min-w-0 w-full max-w-5xl flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1.32fr)_minmax(18rem,0.68fr)] lg:gap-5">
-        <div className="relative min-w-0 overflow-hidden rounded-[2rem] border border-white/10 bg-[#111412] p-5 shadow-console sm:p-7">
-          <div className="console-grid absolute inset-0 opacity-55" aria-hidden="true" />
-          <div className="relative">
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#66d7c6]">
-              Delayed speech monitor
-            </p>
-            <h1 className="mt-3 max-w-2xl text-4xl font-black leading-none text-white sm:text-6xl">
-              Echo Practice
-            </h1>
-            <p className="mt-4 max-w-xl break-words text-base leading-7 text-zinc-300 sm:text-lg">
-              Hear your own voice a beat later while you rehearse pace, focus,
-              and composure.
-            </p>
+  useEffect(() => {
+    const repaintScope = () => drawScopeFrame()
 
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+    repaintScope()
+    window.addEventListener('resize', repaintScope)
+
+    return () => window.removeEventListener('resize', repaintScope)
+  }, [drawScopeFrame])
+
+  return (
+    <main className="min-h-svh bg-[#090a0a] px-3 py-3 text-zinc-100 sm:px-5 sm:py-5">
+      <section className="mx-auto grid w-full max-w-5xl min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1.36fr)_minmax(19rem,0.64fr)]">
+        <section className="studio-panel min-w-0 rounded-xl border border-white/10 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.28)] sm:p-5">
+          <header className="flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="font-mono text-xs font-bold uppercase text-[#7ed7ca]">
+                Delayed Speech Monitor
+              </p>
+              <h1 className="mt-1.5 text-[1.7rem] font-bold leading-tight text-white sm:text-3xl">
+                Echo Practice
+              </h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex h-8 items-center gap-2 rounded-md border px-2.5 font-mono text-xs font-bold uppercase ${
+                  status === 'active'
+                    ? 'border-[#66d7c6]/35 bg-[#66d7c6]/12 text-[#a4f0e5]'
+                    : status === 'blocked'
+                      ? 'border-[#ff776e]/35 bg-[#ff776e]/10 text-[#ffc0ba]'
+                      : 'border-white/10 bg-white/[0.045] text-zinc-300'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    status === 'active'
+                      ? 'bg-[#66d7c6]'
+                      : status === 'blocked'
+                        ? 'bg-[#ff776e]'
+                        : 'bg-zinc-500'
+                  }`}
+                />
+                {status}
+              </span>
+              <span className="inline-flex h-8 items-center rounded-md border border-white/10 bg-black/25 px-2.5 font-mono text-xs text-zinc-300">
+                Delay {delayMs} ms
+              </span>
+            </div>
+          </header>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+            <div>
+              <p className="font-mono text-[0.7rem] font-bold uppercase text-zinc-500">
+                Session
+              </p>
+              <p className="mt-1 min-h-6 text-sm font-medium text-zinc-100" role="status">
+                {statusCopy[status]}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
               <button
-                className="min-h-20 rounded-[1.4rem] bg-[#f5bf69] px-5 text-xl font-black text-[#171108] transition hover:bg-[#ffce84] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#f5bf69]/55 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+                className="min-h-12 rounded-lg border border-[#66d7c6]/32 bg-[#17302d] px-4 text-base font-semibold text-[#d8fffa] transition hover:border-[#66d7c6]/58 hover:bg-[#1c3a36] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#66d7c6] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.035] disabled:text-zinc-500"
                 disabled={status === 'active' || status === 'starting'}
                 onClick={() => void startMic()}
                 type="button"
@@ -339,7 +461,7 @@ export default function App() {
                 Start Mic
               </button>
               <button
-                className="min-h-20 rounded-[1.4rem] border border-[#ff776e]/35 bg-[#291413] px-5 text-xl font-black text-[#ffd1cd] transition hover:border-[#ff776e]/60 hover:bg-[#351816] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#ff776e]/45 disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.035] disabled:text-zinc-500"
+                className="min-h-12 rounded-lg border border-[#ff776e]/28 bg-[#241716] px-4 text-base font-semibold text-[#ffd4d0] transition hover:border-[#ff776e]/52 hover:bg-[#301b19] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff776e] disabled:cursor-not-allowed disabled:border-white/8 disabled:bg-white/[0.035] disabled:text-zinc-500"
                 disabled={status === 'off'}
                 onClick={stopMic}
                 type="button"
@@ -347,152 +469,133 @@ export default function App() {
                 Stop Mic
               </button>
             </div>
+          </div>
 
-            <div className="mt-4 rounded-[1.6rem] border border-white/10 bg-black/35 p-4 sm:p-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-[0.12em] text-zinc-400">
-                    Status
-                  </p>
-                  <p
-                    className="mt-2 text-lg font-semibold text-white"
-                    role="status"
-                  >
-                    {statusCopy[status]}
-                  </p>
-                </div>
-                <span
-                  className={`inline-flex w-fit items-center rounded-full px-3 py-1.5 text-sm font-bold ${
-                    status === 'active'
-                      ? 'bg-[#66d7c6]/16 text-[#92eee0]'
-                      : status === 'blocked'
-                        ? 'bg-[#ff776e]/16 text-[#ffb3ad]'
-                        : 'bg-white/8 text-zinc-300'
-                  }`}
-                >
-                  {status}
-                </span>
-              </div>
-
-              <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-sm font-bold text-zinc-300">
-                    Mic level
-                  </span>
-                  <span className="text-sm text-zinc-400">{micLevel}%</span>
-                </div>
+          <div className="mt-3 rounded-lg border border-white/10 bg-black/32 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-mono text-xs font-bold uppercase text-zinc-400">
+                Mic Input Scope
+              </h2>
+              <span className="font-mono text-xs text-zinc-500">
+                Echo gain {echoVolume}% / dry {dryVolume}%
+              </span>
+            </div>
+            <canvas
+              aria-label="Live microphone waveform"
+              className="scope-grid mt-2 h-28 w-full rounded-md border border-white/8 bg-[#080a0a]"
+              ref={scopeCanvasRef}
+            />
+            <div className="mt-2.5 flex items-center gap-3">
+              <span className="w-20 shrink-0 font-mono text-[0.68rem] font-bold uppercase text-zinc-500">
+                Input RMS
+              </span>
+              <div
+                aria-label={`Microphone level ${micLevel} percent`}
+                aria-valuemax={100}
+                aria-valuemin={0}
+                aria-valuenow={micLevel}
+                className="h-2 min-w-0 flex-1 overflow-hidden rounded-sm border border-white/8 bg-[#050606]"
+                role="meter"
+              >
                 <div
-                  aria-label={`Microphone level ${micLevel} percent`}
-                  aria-valuemax={100}
-                  aria-valuemin={0}
-                  aria-valuenow={micLevel}
-                  className="h-5 overflow-hidden rounded-full border border-white/10 bg-[#050605]"
-                  role="meter"
-                >
-                  <div
-                    className="meter-fill h-full rounded-full"
-                    style={{ width: `${Math.max(3, micLevel)}%` }}
-                  />
-                </div>
+                  className="meter-fill h-full"
+                  style={{ width: `${micLevel}%` }}
+                />
               </div>
-
-              {errorMessage && (
-                <p
-                  className="mt-4 rounded-[1.1rem] border border-[#ff776e]/28 bg-[#ff776e]/12 p-3 text-sm leading-6 text-[#ffd1cd]"
-                  role="alert"
-                >
-                  {errorMessage}
-                </p>
-              )}
+              <span className="w-10 text-right font-mono text-xs text-zinc-400">
+                {micLevel}%
+              </span>
             </div>
           </div>
-        </div>
 
-        <aside className="flex min-w-0 flex-col gap-4">
-          <div className="rounded-[2rem] border border-white/10 bg-[#121513] p-5 shadow-console sm:p-6">
-            <h2 className="text-xl font-black text-white">Monitor</h2>
-            <div className="mt-4 flex flex-col gap-3">
-              <SliderControl
-                label="Delay"
-                max={MAX_DELAY_MS}
-                onChange={setDelayMs}
-                step={25}
-                value={delayMs}
-                valueLabel={`${delayMs} ms`}
-              />
-              <SliderControl
-                label="Echo volume"
-                max={100}
-                onChange={setEchoVolume}
-                step={1}
-                value={echoVolume}
-                valueLabel={`${echoVolume}%`}
-              />
-              <SliderControl
-                label="Dry voice volume"
-                max={100}
-                onChange={setDryVolume}
-                step={1}
-                value={dryVolume}
-                valueLabel={`${dryVolume}%`}
-              />
-            </div>
+          <p className="mt-3 text-sm leading-6 text-zinc-400">
+            Put on headphones before monitoring. Speakers can feed the delayed
+            signal back into the microphone.
+          </p>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-              <button
-                className="min-h-16 rounded-[1.25rem] border border-[#66d7c6]/28 bg-[#66d7c6]/10 px-4 text-left text-base font-bold text-[#b8fff3] transition hover:border-[#66d7c6]/50 hover:bg-[#66d7c6]/16 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#66d7c6]/35"
-                onClick={() => {
-                  setDelayMs(800)
-                  setEchoVolume(95)
-                }}
-                type="button"
-              >
-                Speech Jammer Mode
-              </button>
-              <button
-                className="min-h-16 rounded-[1.25rem] border border-[#f5bf69]/25 bg-[#f5bf69]/10 px-4 text-left text-base font-bold text-[#ffe0a8] transition hover:border-[#f5bf69]/48 hover:bg-[#f5bf69]/16 focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#f5bf69]/35"
-                onClick={() => {
-                  setDelayMs(1000)
-                  setEchoVolume(62)
-                }}
-                type="button"
-              >
-                Auditorium Mode
-              </button>
-            </div>
+          {errorMessage && (
+            <p
+              className="mt-3 rounded-lg border border-[#ff776e]/28 bg-[#ff776e]/10 p-3 text-sm leading-6 text-[#ffd1cd]"
+              role="alert"
+            >
+              {errorMessage}
+            </p>
+          )}
+        </section>
+
+        <aside className="studio-panel min-w-0 rounded-xl border border-white/10 p-4 shadow-[0_18px_48px_rgba(0,0,0,0.22)] sm:p-5">
+          <div className="flex items-baseline justify-between gap-3 border-b border-white/8 pb-3">
+            <h2 className="text-lg font-semibold text-white">Monitor</h2>
+            <span className="font-mono text-xs uppercase text-zinc-500">
+              Settings
+            </span>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2.5">
+            <SliderControl
+              label="Delay"
+              max={MAX_DELAY_MS}
+              onChange={setDelayMs}
+              step={25}
+              unit="ms"
+              value={delayMs}
+            />
+            <SliderControl
+              label="Echo Gain"
+              max={100}
+              onChange={setEchoVolume}
+              step={1}
+              unit="%"
+              value={echoVolume}
+            />
+            <SliderControl
+              label="Dry Monitor"
+              max={100}
+              onChange={setDryVolume}
+              step={1}
+              unit="%"
+              value={dryVolume}
+            />
+          </div>
+
+          <p className="mt-2 text-xs leading-5 text-zinc-500">
+            Dry Monitor stays at 0% unless you need direct voice monitoring.
+          </p>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+            <button
+              className="min-h-11 rounded-lg border border-white/12 bg-white/[0.045] px-3 text-left text-sm font-semibold text-zinc-100 transition hover:border-[#66d7c6]/42 hover:bg-white/[0.075] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#66d7c6]"
+              onClick={() => {
+                setDelayMs(800)
+                setEchoVolume(95)
+              }}
+              type="button"
+            >
+              Speech Jammer Mode
+            </button>
+            <button
+              className="min-h-11 rounded-lg border border-white/12 bg-white/[0.045] px-3 text-left text-sm font-semibold text-zinc-100 transition hover:border-[#f5bf69]/40 hover:bg-white/[0.075] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f5bf69]"
+              onClick={() => {
+                setDelayMs(1000)
+                setEchoVolume(62)
+              }}
+              type="button"
+            >
+              Auditorium Mode
+            </button>
+          </div>
+
+          <div className="mt-3 border-t border-white/8 pt-3 text-sm leading-5 text-zinc-400">
+            <p>
+              On iPhone, open this HTTPS page in Safari, not an in-app browser.
+              Put on headphones, tap Start Mic, allow access, and speak slowly.
+            </p>
+            <p className="mt-2 text-xs text-zinc-500">
+              A laptop local-IP test link may not allow microphone access on
+              iPhone.
+            </p>
           </div>
         </aside>
-
-        <div className="grid gap-4 lg:col-span-2 lg:grid-cols-3">
-          <article className="rounded-[1.7rem] border border-white/10 bg-[#111412] p-5 text-sm leading-6 text-zinc-300">
-            <h2 className="mb-2 text-lg font-black text-white">
-              Phone setup
-            </h2>
-            <p>
-              Use Safari, not an in-app browser. Wear headphones to prevent
-              feedback.
-            </p>
-          </article>
-          <article className="rounded-[1.7rem] border border-white/10 bg-[#111412] p-5 text-sm leading-6 text-zinc-300">
-            <h2 className="mb-2 text-lg font-black text-white">
-              iPhone testing
-            </h2>
-            <p>
-              Testing from a laptop&apos;s local IP may not allow microphone
-              access on iPhone. Use the deployed HTTPS URL.
-            </p>
-          </article>
-          <article className="rounded-[1.7rem] border border-white/10 bg-[#111412] p-5 text-sm leading-6 text-zinc-300">
-            <h2 className="mb-2 text-lg font-black text-white">
-              Quick start
-            </h2>
-            <p>
-              Deploy to Vercel, open the link on your iPhone in Safari, put on
-              headphones, tap Start Mic, then speak slowly through the delayed
-              echo.
-            </p>
-          </article>
-        </div>
       </section>
     </main>
   )
